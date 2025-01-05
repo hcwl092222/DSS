@@ -10,6 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import classification_report
+from sklearn.cluster import KMeans
 
 # 更改工作目錄
 current = os.path.dirname(os.path.abspath(__file__))
@@ -18,8 +19,8 @@ os.chdir(current)
 @st.cache_data
 def load_data():
     df = pd.read_csv(
-        'shopping_behavior_updated.csv',
-        usecols=["Customer ID","Age", "Gender", "Item Purchased", "Purchase Amount (USD)","Frequency of Purchases",'Payment Method']
+        'shopping_behavior.csv',
+        usecols=["Customer ID","Age", "Gender", "Item Purchased", "Purchase Amount (USD)","Frequency of Purchases",'Payment Method',"Brand"]
     )
     # 確保 Age 為數值類型
     df['Age'] = pd.to_numeric(df['Age'], errors='coerce')
@@ -36,7 +37,7 @@ def calculate_item_age_distribution(df):
 # 載入數據
 df = load_data()
 
-tab1,tab2,tab3,tab4= st.tabs(["Item","Price","Consumer Behavior Analysis","Filter consumer data by age"])
+tab1,tab2,tab3,tab4,tab5= st.tabs(["Item","Price","Consumer Behavior Analysis","Popular Items and Brands by Age","Consumer Behavior Clustering"])
 
 with tab1:
     st.title("Item purchased data")
@@ -138,22 +139,22 @@ with tab3:
         fig, ax = plt.subplots(1, 2, figsize=(14, 6))
 
         # 1. 商品購買分佈
-        sns.barplot(x=item_counts.values, y=item_counts.index, ax=ax[0], palette='Spectral')
+        sns.barplot(x=item_counts.values, y=item_counts.index, ax=ax[0], palette='Spectral', hue=item_counts.index)
         ax[0].set_title("Top 10 Most Popular Items")
         ax[0].set_xlabel("Number of Purchases")
         ax[0].set_ylabel("Item Name")
 
         # 2. 支付方式分佈
-        sns.countplot(x='Payment Method', data=df, ax=ax[1], palette='vlag')
+        sns.countplot(x='Payment Method', data=df, ax=ax[1], palette='vlag', hue='Payment Method')
         ax[1].set_title("Payment Method Distribution")
         ax[1].set_ylabel("Count")
 
         # 在 Streamlit 中顯示圖表
         st.pyplot(fig)
-with tab4:
-     # 年齡篩選功能
-    st.header("Filter consumer data by age")
+with tab4: 
+    st.header("Popular Items and Brands by Age")
     
+    # 年齡篩選
     min_age = df['Age'].min()
     max_age = df['Age'].max()
     
@@ -172,7 +173,77 @@ with tab4:
         # 分析篩選後的商品購買次數
         filtered_item_counts = filtered_df_reset['Item Purchased'].value_counts().head(5)
         
-        st.write("The most popular item (Top 5)")
+        st.write("Top 5 most popular items in the selected age range:")
         st.write(filtered_item_counts)
+
+        # 分析篩選後的品牌購買次數
+        if 'Brand' in filtered_df.columns:  # 確保有 Brand 欄位
+            filtered_brand_counts = filtered_df_reset['Brand'].value_counts().head(5)
+            st.write("Top 5 most popular brands in the selected age range:")
+            st.write(filtered_brand_counts)
+        else:
+            st.write("Brand data not available.")
+with tab5:
+    st.header("Clustering of Consumers Based on Behavior")
+
+    # 使用新的 frequency_mapping 進行映射
+    frequency_mapping = {
+        "Weekly": 1,            # 每週
+        "Bi-Weekly": 2,         # 每兩週
+        "Fortnightly": 2,       # 每兩週
+        "Monthly": 4,           # 每月（大約四週）
+        "Quarterly": 13,        # 每季（大約13週）
+        "Every 3 Months": 13,   # 每季
+        "Annually": 52          # 每年（大約52週）
+    }
+
+    # 映射 'Frequency of Purchases' 欄位
+    df['Frequency of Purchases'] = df['Frequency of Purchases'].map(frequency_mapping)
+
+    # 檢查是否成功映射
+    #if df['Frequency of Purchases'].isnull().any():
+        #st.error("Some values in 'Frequency of Purchases' could not be mapped. They will be replaced with '0'.")
+        #df['Frequency of Purchases'] = df['Frequency of Purchases'].fillna(0)
+    #else:
+        #st.success("All values in 'Frequency of Purchases' successfully mapped.")
+
+    # 選擇需要聚類的特徵
+    clustering_features = df[['Age', 'Frequency of Purchases', 'Purchase Amount (USD)']]
+    scaler = StandardScaler()
+    clustering_features_scaled = scaler.fit_transform(clustering_features)
+
+    # 執行 K-Means 聚類
+    kmeans = KMeans(n_clusters=3, random_state=42)
+    df['Cluster'] = kmeans.fit_predict(clustering_features_scaled)
+
+    # 聚類結果可視化
+    #st.subheader("Clustering Results (3 groups)")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.scatterplot(
+        x=df['Age'],
+        y=df['Purchase Amount (USD)'],
+        hue=df['Cluster'],
+        palette='viridis',
+        ax=ax
+    )
+    ax.set_title("Clustering Visualization")
+    ax.set_xlabel("Age")
+    ax.set_ylabel("Purchase Amount (USD)")
+    st.pyplot(fig)
+
+    # 聚類分布統計
+    st.write("Cluster Distribution:")
+    cluster_counts = df['Cluster'].value_counts()
+    # 添加 Cluster 註解
+    st.write("""
+    - **Cluster 0**: Likely to have higher frequency of purchases but lower purchase amounts.
+    - **Cluster 1**: Likely to have moderate purchase frequency and higher purchase amounts.
+    - **Cluster 2**: Likely to have lower frequency of purchases with moderate to high purchase amounts.
+    """)
+    
+    st.write(cluster_counts)
+
+
+
 
 
